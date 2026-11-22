@@ -6,7 +6,9 @@
 float shuntZero = 1.55f;
 float measAmps  = 0.0f;
 float measVout  = 0.0f;
+float measVin   = 12.0f;
 float cellV1 = 0, cellV2 = 0, cellV3 = 0, cellV4 = 0, cellV5 = 0, cellV6 = 0;
+uint16_t rawMuxY0 = 0, rawMuxY1 = 0, rawMuxY2 = 0;
 
 void updateAllMeasurements() {
   uint16_t rVout = readAdcAvg16(7); // PA_7
@@ -39,11 +41,14 @@ void updateAllMeasurements() {
     cellV1 = cellV2 = cellV3 = cellV4 = cellV5 = cellV6 = 0.0f;
   }
 
+  rawMuxY0 = readMuxAvg16(0); // Y0: Входное напряжение V_IN
+  rawMuxY1 = readMuxAvg16(1); // Y1: Термодатчик CN1
+  rawMuxY2 = readMuxAvg16(2); // Y2: Аппаратный датчик тока разряда (V5/C3)
+
+  measVin = rawMuxY0 * K_VIN;
+
   if (pwmDisch > 0) {
-    float packV = getTotalPackVoltage();
-    if (packV < 2.0f) packV = 3.7f;
-    float effPwm = (pwmDisch > PWM_DISCH_OFFSET) ? (pwmDisch - PWM_DISCH_OFFSET) : 0.0f;
-    measAmps = (effPwm / 100.0f) * K_DISCH_CALIB * (packV / 3.80f);
+    measAmps = (rawMuxY2 > 2) ? (rawMuxY2 * K_DISCH_ADC) : 0.0f;
   } else {
     float rSh = readShuntOversampled64();
     float rawDiff = rSh - shuntZero;

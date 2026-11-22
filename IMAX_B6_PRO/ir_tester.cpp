@@ -27,7 +27,7 @@ static uint16_t readAdcAvg128(uint8_t ch) {
 static void sampleAllCellsHighRes(float* outV) {
   if (useVoutAs1S) {
     uint16_t rV = readAdcAvg128(7);
-    float vTotal = (rV > 12) ? (rV * 0.00888f) : 0.0f;
+    float vTotal = (rV > 12) ? (rV * K_VOUT) : 0.0f;
     float vPerCell = (selCells > 0) ? (vTotal / (float)selCells) : vTotal;
     for (uint8_t i = 0; i < 6; i++) {
       outV[i] = (i < selCells) ? vPerCell : 0.0f;
@@ -63,20 +63,14 @@ bool runInternalResistanceTest() {
   float vPack = getTotalPackVoltage();
   if (vPack < 2.2f) return false;
 
-  // Безопасный импульс нагрузки (~0.65 А на 1S, не более 3.2 Вт на IRFZ44N / D880-Y)
+  // Безопасный импульс нагрузки (~0.50-0.65 А на 1S, не более 3.2 Вт на IRFZ44N)
   float targetPulseAmps = 3.2f / vPack;
-  if (targetPulseAmps > 0.75f) targetPulseAmps = 0.75f;
+  if (targetPulseAmps > 0.70f) targetPulseAmps = 0.70f;
   if (targetPulseAmps < 0.20f) targetPulseAmps = 0.20f;
 
-  // Пересчитываем скважность с учётом реального напряжения сборки (база 3.80 В)
-  float normAmps = targetPulseAmps * (3.80f / vPack);
-  uint16_t pulsePwm = PWM_DISCH_OFFSET + (uint16_t)((normAmps / K_DISCH_CALIB) * 100.0f);
+  // Начальная скважность с учётом напряжения сборки (калибровочная база 3.80 В)
+  uint16_t pulsePwm = PWM_DISCH_OFFSET + (uint16_t)((targetPulseAmps / 0.50f) * 224.0f * (3.80f / vPack));
   if (pulsePwm > 360) pulsePwm = 360;
-
-  // Точный ток импульса для расчёта по закону Ома
-  float effPwm = (pulsePwm > PWM_DISCH_OFFSET) ? (pulsePwm - PWM_DISCH_OFFSET) : 0.0f;
-  float actualPulseAmps = (effPwm / 100.0f) * K_DISCH_CALIB * (vPack / 3.80f);
-  if (actualPulseAmps < 0.05f) actualPulseAmps = 0.05f;
 
   float irAccum[6] = {0, 0, 0, 0, 0, 0};
 
@@ -90,19 +84,23 @@ bool runInternalResistanceTest() {
     delay(250);
     sampleAllCellsHighRes(vIdle);
 
-    // 2. Подаём калиброванный импульс нагрузки через PA_8 на 450 мс
+    // 2. Подаём импульс нагрузки через PA_8 на 450 мс и замеряем реальный ток по M2 (Y2)
     analogWrite(PIN_PWM_DISCH, pulsePwm);
     delay(450);
+    uint16_t rawDisch = readMuxAvg16(2);
     sampleAllCellsHighRes(vLoad);
 
     // 3. Мгновенно снимаем нагрузку
     analogWrite(PIN_PWM_DISCH, 0);
 
-    // 4. Вычисляем сопротивление каждой ячейки: R (мОм) = (dV / I) * 1000
+    float measuredPulseAmps = rawDisch * K_DISCH_ADC;
+    if (measuredPulseAmps < 0.05f) return false;
+
+    // 4. Вычисляем сопротивление каждой ячейки по реальному току: R (мОм) = (dV / I) * 1000
     for (uint8_t i = 0; i < selCells; i++) {
       float dv = vIdle[i] - vLoad[i];
       if (dv > 0.001f) {
-        irAccum[i] += (dv / actualPulseAmps) * 1000.0f;
+        irAccum[i] += (dv / measuredPulseAmps) * 1000.0f;
       }
     }
   }

@@ -9,6 +9,21 @@ void initHardwarePinsSafe() {
   pinMode(PIN_PWM_BOOST, OUTPUT); digitalWrite(PIN_PWM_BOOST, LOW);
   pinMode(PIN_PWM_DISCH, OUTPUT); digitalWrite(PIN_PWM_DISCH, LOW);
 
+  // Полная разблокировка домена RTC/Backup для PC_13 (ножка 2) и PC_14 (ножка 3)
+  RCC->AHBENR  |= RCC_AHBENR_GPIOCEN;
+  RCC->APB1ENR |= RCC_APB1ENR_PWREN;
+  PWR->CR      |= PWR_CR_DBP;
+  RCC->BDCR    &= ~(RCC_BDCR_LSEON | RCC_BDCR_LSEBYP);
+  RTC->WPR      = 0xCA;
+  RTC->WPR      = 0x53;
+  RTC->TAFCR    = 0;
+
+  // Настройка PC_13 и PC_14 напрямую как Push-Pull Output (01)
+  GPIOC->MODER  &= ~((3UL << (13 * 2)) | (3UL << (14 * 2)));
+  GPIOC->MODER  |=  ((1UL << (13 * 2)) | (1UL << (14 * 2)));
+  GPIOC->OTYPER &= ~((1UL << 13) | (1UL << 14));
+  GPIOC->BSRR    =  (1UL << (13 + 16)) | (1UL << (14 + 16)); // LOW
+
   pinMode(PIN_BAL_1, OUTPUT);
   pinMode(PIN_BAL_2, OUTPUT);
   pinMode(PIN_BAL_3, OUTPUT);
@@ -19,12 +34,13 @@ void initHardwarePinsSafe() {
 }
 
 void initHardwareADC() {
-  RCC->AHBENR  |= RCC_AHBENR_GPIOAEN;
+  RCC->AHBENR  |= RCC_AHBENR_GPIOAEN | RCC_AHBENR_GPIOBEN;
   RCC->APB2ENR |= RCC_APB2ENR_ADCEN;
   RCC->CR2     |= RCC_CR2_HSI14ON;
   while ((RCC->CR2 & RCC_CR2_HSI14RDY) == 0);
 
-  GPIOA->MODER |= 0x0000FFFF; // PA0..PA7 -> Analog
+  GPIOA->MODER |= 0x0000FFFF;       // PA0..PA7 -> Analog
+  GPIOB->MODER |= (3UL << (1 * 2)); // PB1 -> Analog (ADC1_CH9)
 
   if ((ADC1->CR & ADC_CR_ADEN) != 0) {
     ADC1->CR |= ADC_CR_ADDIS;
@@ -57,6 +73,18 @@ uint16_t readAdcAvg16(uint8_t ch) {
     sum += ADC1->DR;
   }
   return (uint16_t)(sum / 16);
+}
+
+uint16_t readMuxAvg16(uint8_t muxCh) {
+  // PC_13 = A (вывод 11 U4), PC_14 = B (вывод 10 U4)
+  if (muxCh & 0x01) GPIOC->BSRR = (1UL << 13);
+  else              GPIOC->BSRR = (1UL << (13 + 16));
+
+  if (muxCh & 0x02) GPIOC->BSRR = (1UL << 14);
+  else              GPIOC->BSRR = (1UL << (14 + 16));
+
+  delay(2);
+  return readAdcAvg16(ADC_CH_MUX);
 }
 
 float readShuntOversampled64() {

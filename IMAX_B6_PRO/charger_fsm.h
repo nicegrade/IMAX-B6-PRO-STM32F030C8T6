@@ -11,6 +11,7 @@ extern ChemType selChem;
 extern WorkMode selMode;
 extern uint8_t  selCells;
 extern float    setAmps;
+extern float vinMinLimit;
 
 extern RunState    sysState;
 extern const char* errText;

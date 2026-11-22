@@ -74,6 +74,10 @@ void sendTelemetryNow(const char* overrideFlag) {
     debugSerial.print(F(" C6:")); debugSerial.print(cellV6, 2);
   }
 
+  debugSerial.print(F(" Vin:")); debugSerial.print(measVin, 2);
+  debugSerial.print(F(" M1:"));  debugSerial.print(rawMuxY1);
+  debugSerial.print(F(" M2:"));  debugSerial.print(rawMuxY2);
+
   printSysStatus(overrideFlag);
 }
 
