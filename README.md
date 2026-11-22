@@ -60,7 +60,6 @@
 | ![MBR1560C и 50N06](docs/MBR_1560C__50N06.jpg) | ![IRFZ44N](docs/IRFZ44N.jpg) | ![D880-Y](docs/D880-Y.jpg) |
 
 </details>
----
 
 ## 📂 Структура репозитория
 
