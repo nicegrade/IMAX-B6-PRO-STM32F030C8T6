@@ -1,0 +1,31 @@
+# --- Временные файлы компиляции (Arduino IDE / STM32duino) ---
+# Игнорируем отладочные файлы внутри IMAX_B6_PRO/build, оставляя .bin и .hex
+IMAX_B6_PRO/build/**/*.elf
+IMAX_B6_PRO/build/**/*.map
+IMAX_B6_PRO/build/**/*.lst
+IMAX_B6_PRO/build/**/*.sym
+IMAX_B6_PRO/build/**/*.d
+IMAX_B6_PRO/build/**/*.o
+IMAX_B6_PRO/build/**/*.a
+
+# Если захотите исключить всю папку сборки целиком, раскомментируйте строку ниже:
+# IMAX_B6_PRO/build/
+
+# --- Системные и временные файлы Windows ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# --- Редакторы кода и резервные копии ---
+.vscode/
+.idea/
+*.bak
+*.tmp
+*.swp
+*~
+
+# --- Логи и выгрузки из веб-плоттера ---
+*.csv
+*.log

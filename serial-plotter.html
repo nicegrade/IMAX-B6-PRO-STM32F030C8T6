@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>IMAX B6 PRO — Телеметрия АКБ</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel-2: #1f242c; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #2f81f7;
+    --v-col: #3fb950; --i-col: #ff9f1c; --red: #f85149; --purple: #a371f7;
+  }
+  * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); font-size: 13px; }
+  .wrap { max-width: 1200px; margin: 0 auto; }
+  .bar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    background: var(--panel); padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px;
+  }
+  select, input, button, textarea {
+    background: #0d1117; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 10px; font-size: 12px; outline: none;
+  }
+  select:focus, input:focus, textarea:focus { border-color: var(--accent); }
+  button { cursor: pointer; background: var(--panel-2); transition: 0.15s; font-weight: 500; }
+  button:hover { background: #2d333b; border-color: #484f58; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.active { background: var(--v-col); border-color: var(--v-col); color: #000; font-weight: 600; }
+  button.warn { background: var(--i-col); border-color: var(--i-col); color: #000; font-weight: 600; }
+  .badge { padding: 4px 9px; border-radius: 6px; font-weight: 700; background: var(--panel-2); border: 1px solid var(--border); font-size: 12px; }
+  .badge.run { background: rgba(63,185,80,.15); color: var(--v-col); border-color: var(--v-col); }
+  .badge.done { background: rgba(47,129,247,.15); color: #79c0ff; border-color: var(--accent); }
+  .badge.err { background: rgba(248,81,73,.15); color: var(--red); border-color: var(--red); }
+  .kpis { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-left: auto; font-size: 13px; color: var(--muted); }
+  .kpis span b { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
+  .kpis span.ir-pill {
+    display: none; padding: 3px 9px; border-radius: 6px;
+    background: rgba(163,113,247,.15); border: 1px solid var(--purple); color: #d2a8ff;
+  }
+  .kpis span.ir-pill b { color: #fff; }
+  .spin-box { display: inline-flex; align-items: center; background: #0d1117; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .spin-box button { border: none; border-radius: 0; padding: 5px 10px; font-weight: 700; color: var(--text); background: var(--panel-2); }
+  .spin-box button:hover { background: #30363d; }
+  .spin-box input {
+    border: none; width: 62px; text-align: center; padding: 5px 2px;
+    font-weight: 700; color: var(--v-col); font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield;
+  }
+  .spin-box input::-webkit-outer-spin-button, .spin-box input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .chart-wrap { position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+  canvas { width: 100%; height: 350px; display: block; cursor: crosshair; }
+  .tooltip {
+    position: absolute; display: none; pointer-events: none; z-index: 10;
+    background: rgba(13, 17, 23, 0.94); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.45); min-width: 155px;
+  }
+  .tooltip .tt-head { color: var(--muted); font-size: 11px; margin-bottom: 4px; border-bottom: 1px solid var(--border); padding-bottom: 3px; }
+  .tooltip .tt-row { display: flex; justify-content: space-between; gap: 12px; margin: 2px 0; font-variant-numeric: tabular-nums; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 10px; }
+  th, td { padding: 7px 12px; border-bottom: 1px solid var(--border); text-align: right; font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  th { background: #12161c; color: var(--muted); font-weight: 600; font-size: 12px; }
+  tr:last-child td { border-bottom: none; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; }
+  .log-box { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+  .log-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; color: var(--muted); }
+  pre { margin: 0; height: 105px; overflow-y: auto; background: #0d1117; padding: 8px; border-radius: 6px; border: 1px solid var(--border); font-family: monospace; font-size: 11px; color: #8b949e; }
+  textarea { width: 100%; height: 80px; font-family: monospace; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="bar">
+    <select id="baud"><option value="9600" selected>9600</option><option value="115200">115200</option></select>
+    <button id="btnConn" class="primary">Подключиться</button>
+    <button id="btnPause">Пауза</button>
+    <button id="btnClear">Очистить</button>
+    <button id="btnCsv">CSV</button>
+    <button id="btnTogglePaste">Вставить текст</button>
+    <select id="maxPts">
+      <option value="200">200 точек</option>
+      <option value="1000" selected>1000 точек</option>
+      <option value="5000">5000 точек</option>
+      <option value="100000">100000 точек</option>
+    </select>
+    <span id="sysBadge" class="badge">SYS: IDLE</span>
+    <div class="kpis">
+      <span id="irPill" class="ir-pill" title="">IR: <b id="kpiIr">—</b> мОм</span>
+      <span>Общая ёмкость: <b id="kpiCap">0.000</b> А·ч</span>
+      <span>Время: <b id="kpiTime">00:00:00</b></span>
+    </div>
+  </div>
+
+  <div class="bar">
+    <span style="color:var(--muted)">Шкала напряжения (В):</span>
+    <span>Мин:</span>
+    <div class="spin-box">
+      <button type="button" id="vMinDec">−</button>
+      <input id="vMin" type="number" step="0.1" value="2.5">
+      <button type="button" id="vMinInc">+</button>
+    </div>
+    <span>Макс:</span>
+    <div class="spin-box">
+      <button type="button" id="vMaxDec">−</button>
+      <input id="vMax" type="number" step="0.1" value="4.3">
+      <button type="button" id="vMaxInc">+</button>
+    </div>
+    <button type="button" id="btnAutoFit" title="Подогнать шкалу под текущие данные">Авто-масштаб</button>
+    <label style="cursor:pointer;color:var(--muted)"><input id="smoothLine" type="checkbox" checked> Сглаживание</label>
+    <label style="margin-left:auto;cursor:pointer;color:var(--muted)"><input id="autoReset" type="checkbox" checked> Авто-сброс и масштаб по SYS</label>
+  </div>
+
+  <div id="pasteWrap" class="bar" style="display:none;flex-direction:column;align-items:stretch">
+    <textarea id="pasteArea" placeholder="Вставьте строки телеметрии (V:3.65 I:0.50 P:25.0 Q:0.012 C1:3.65 SYS:RUN_CHG_1S)..."></textarea>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button id="btnParseText" class="primary">Построить из текста</button>
+      <button id="btnDemo">Пример 1S + IR</button>
+    </div>
+  </div>
+  <div class="chart-wrap">
+    <canvas id="chart"></canvas>
+    <div id="tooltip" class="tooltip"></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Параметр</th>
+        <th>Шкала</th>
+        <th>Минимум</th>
+        <th>Среднее</th>
+        <th>Максимум</th>
+        <th>Текущее</th>
+      </tr>
+    </thead>
+    <tbody id="statsBody"></tbody>
+  </table>
+
+  <div class="log-box">
+    <div class="log-head">
+      <span>Поток COM-порта — строк: <b id="lineCount">0</b> <span id="logPauseTag" style="color:var(--i-col);font-weight:600;display:none">(НА ПАУЗЕ)</span></span>
+      <button id="btnTxt">Скачать TXT</button>
+    </div>
+    <pre id="rawLog">Ожидание данных из порта...</pre>
+  </div>
+
+</div>
+
+<script>
+const SERIES = [
+  { key: 'V',  label: 'Напряжение (В)', color: '#3fb950', axis: 'V', show: true },
+  { key: 'I',  label: 'Ток (А)',        color: '#ff9f1c', axis: 'I', show: true },
+  { key: 'P',  label: 'ШИМ (%)',        color: '#a371f7', axis: 'P', show: false },
+  { key: 'C1', label: 'Банка C1 (В)',   color: '#58a6ff', axis: 'V', show: false },
+  { key: 'C2', label: 'Банка C2 (В)',   color: '#f778ba', axis: 'V', show: false },
+  { key: 'C3', label: 'Банка C3 (В)',   color: '#79c0ff', axis: 'V', show: false }
+];
+
+let data = [], rawLines = [];
+let paused = false, port = null, reader = null;
+let elapsedSec = 0, timerId = null, lastSysFlag = 'IDLE';
+let hoverIdx = -1;
+
+const $ = id => document.getElementById(id);
+const canvas = $('chart'), ctx = canvas.getContext('2d');
+
+(function setBatteryFavicon() {
+  const size = 64;
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const g = c.getContext('2d');
+
+  // Фон НЕ рисуем — canvas прозрачный по умолчанию
+
+  // Корпус батареи — тонкий контур
+  const bodyX = 14, bodyY = 12, bodyW = 36, bodyH = 42, r = 6;
+  g.strokeStyle = '#e6edf3';
+  g.lineWidth = 3;
+  g.lineJoin = 'round';
+  g.beginPath();
+  g.roundRect(bodyX, bodyY, bodyW, bodyH, r);
+  g.stroke();
+
+  // Контакт сверху
+  g.fillStyle = '#e6edf3';
+  g.beginPath();
+  g.roundRect(26, 6, 12, 5, 2);
+  g.fill();
+
+  // Заряд — градиент зелёный → бирюзовый
+  const charge = g.createLinearGradient(0, bodyY + bodyH, 0, bodyY + bodyH * 0.35);
+  charge.addColorStop(0, '#2ea043');
+  charge.addColorStop(1, '#3fb950');
+  g.fillStyle = charge;
+  g.beginPath();
+  g.roundRect(bodyX + 5, bodyY + bodyH * 0.35, bodyW - 10, bodyH * 0.6, 3);
+  g.fill();
+
+  // Молния — «вырез», цвет прозрачный через globalCompositeOperation
+  g.globalCompositeOperation = 'destination-out';
+  g.beginPath();
+  g.moveTo(35, 24);
+  g.lineTo(27, 37);
+  g.lineTo(32, 37);
+  g.lineTo(30, 46);
+  g.lineTo(38, 33);
+  g.lineTo(33, 33);
+  g.closePath();
+  g.fill();
+  g.globalCompositeOperation = 'source-over';
+
+  const link = document.createElement('link');
+  link.rel = 'icon';
+  link.type = 'image/png';
+  link.href = c.toDataURL('image/png');
+  document.head.appendChild(link);
+})();
+
+
+function setVoltageRange(minVal, maxVal) {
+  let lo = Number.isFinite(minVal) ? Math.max(0, minVal) : 2.5;
+  let hi = Number.isFinite(maxVal) ? Math.max(lo + 0.1, maxVal) : 4.3;
+  $('vMin').value = lo.toFixed(1);
+  $('vMax').value = hi.toFixed(1);
+  renderAll();
+}
+
+function stepRange(which, delta) {
+  let lo = parseFloat($('vMin').value);
+  let hi = parseFloat($('vMax').value);
+  if (!Number.isFinite(lo)) lo = 2.5;
+  if (!Number.isFinite(hi)) hi = 4.3;
+
+  if (which === 'min') lo = Math.max(0, Math.min(hi - 0.1, lo + delta));
+  else hi = Math.max(lo + 0.1, hi + delta);
+  setVoltageRange(lo, hi);
+}
+
+$('vMinDec').onclick = () => stepRange('min', -0.1);
+$('vMinInc').onclick = () => stepRange('min',  0.1);
+$('vMaxDec').onclick = () => stepRange('max', -0.1);
+$('vMaxInc').onclick = () => stepRange('max',  0.1);
+$('vMin').onchange = () => stepRange('min', 0);
+$('vMax').onchange = () => stepRange('max', 0);
+$('smoothLine').onchange = renderAll;
+
+$('btnAutoFit').onclick = () => {
+  const vVals = [];
+  for (const d of data) {
+    for (const s of SERIES) {
+      if (s.show && s.axis === 'V' && Number.isFinite(d[s.key])) vVals.push(d[s.key]);
+    }
+  }
+  if (!vVals.length) return;
+  const minD = Math.min(...vVals);
+  const maxD = Math.max(...vVals);
+  setVoltageRange(Math.floor((minD - 0.1) * 10) / 10, Math.ceil((maxD + 0.1) * 10) / 10);
+};
+
+function fmtTime(sec) {
+  const h = String(Math.floor(sec / 3600)).padStart(2, '0');
+  const m = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+  const s = String(sec % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+function startTimer(reset = false) {
+  if (reset) { elapsedSec = 0; $('kpiTime').textContent = '00:00:00'; }
+  if (timerId) return;
+  timerId = setInterval(() => {
+    if (!paused) { elapsedSec++; $('kpiTime').textContent = fmtTime(elapsedSec); }
+  }, 1000);
+}
+
+function stopTimer() { if (timerId) { clearInterval(timerId); timerId = null; } }
+
+function setPaused(state) {
+  paused = state;
+  $('btnPause').textContent = paused ? 'Продолжить' : 'Пауза';
+  $('btnPause').classList.toggle('warn', paused);
+  $('logPauseTag').style.display = paused ? 'inline' : 'none';
+}
+
+function clearAllData(keepSys = false) {
+  data = [];
+  hoverIdx = -1;
+  $('tooltip').style.display = 'none';
+  if (!keepSys) {
+    rawLines = [];
+    $('rawLog').textContent = '';
+    $('lineCount').textContent = '0';
+  }
+  $('kpiCap').textContent = '0.000';
+  $('irPill').style.display = 'none';
+  startTimer(true);
+  renderAll();
+}
+function appendRawLog(trimmed) {
+  rawLines.push(trimmed);
+  if (rawLines.length > 5000) rawLines.shift();
+  $('lineCount').textContent = rawLines.length;
+  const logEl = $('rawLog');
+  logEl.textContent = rawLines.slice(-60).join('\n');
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function handleSysFlag(flag, extraMap, rawLine) {
+  if (!flag) return;
+  const badge = $('sysBadge');
+  badge.textContent = 'SYS: ' + flag;
+  badge.className = 'badge';
+  if (flag.startsWith('RUN_')) badge.classList.add('run');
+  else if (flag.startsWith('DONE_')) badge.classList.add('done');
+  else if (flag === 'ERR') badge.classList.add('err');
+
+  if (extraMap.IR !== undefined) {
+    $('irPill').style.display = 'inline-block';
+    $('kpiIr').textContent = extraMap.IR;
+    const cellsIr = ['B1','B2','B3','B4','B5','B6']
+      .filter(k => extraMap[k] !== undefined)
+      .map(k => `${k}: ${extraMap[k]} мОм`).join(', ');
+    $('irPill').title = cellsIr || 'Суммарное внутреннее сопротивление';
+  }
+
+  if (!$('autoReset').checked || flag === lastSysFlag) {
+    lastSysFlag = flag;
+    return;
+  }
+  lastSysFlag = flag;
+
+  if (flag.startsWith('RUN_')) {
+    clearAllData(true);
+    setPaused(false);
+    if (flag === 'RUN_PSU') {
+      setVoltageRange(0.0, 24.0);
+    } else {
+      const m = flag.match(/_(\d)S$/);
+      const cells = (m && m) ? parseInt(m, 10) : 1;
+      setVoltageRange(2.5 * cells, 4.3 * cells);
+    }
+  } else if (flag === 'STOP' || flag.startsWith('DONE_') || flag === 'ERR') {
+    if (!paused && rawLine) appendRawLog(rawLine);
+    setPaused(true);
+    stopTimer();
+  }
+}
+
+function parseLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed) return;
+
+  const map = {};
+  let sysFlag = null;
+  for (const tok of trimmed.split(/\s+/)) {
+    const idx = tok.indexOf(':');
+    if (idx <= 0) continue;
+    const k = tok.slice(0, idx);
+    const v = tok.slice(idx + 1);
+    if (k === 'SYS') sysFlag = v;
+    else {
+      const num = parseFloat(v);
+      if (!isNaN(num)) map[k] = num;
+    }
+  }
+
+  if (map.V === undefined && map.V_pack !== undefined) map.V = map.V_pack;
+  if (map.I === undefined && map.I_amp !== undefined)  map.I = map.I_amp;
+  if (map.P === undefined && map.PWM_pct !== undefined) map.P = map.PWM_pct;
+  if (map.Q === undefined && map.Cap_Ah !== undefined)  map.Q = map.Cap_Ah;
+
+  if (sysFlag) handleSysFlag(sysFlag, map, trimmed);
+  if (paused) return;
+
+  appendRawLog(trimmed);
+  if (map.V === undefined) return;
+
+  startTimer(false);
+  map._sec = elapsedSec;
+  if (map.Q !== undefined) $('kpiCap').textContent = map.Q.toFixed(3);
+
+  data.push(map);
+  const limit = parseInt($('maxPts').value, 10) || 1000;
+  if (data.length > limit) data.splice(0, data.length - limit);
+  renderAll();
+}
+
+function drawSmoothCurve(pts) {
+  if (pts.length < 2) return;
+  ctx.moveTo(pts.x, pts.y);
+  if (!$('smoothLine').checked || pts.length === 2) {
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    return;
+  }
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i === 0 ? i : i - 1];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2 < pts.length ? i + 2 : i + 1];
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+  }
+}
+function renderAll() {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const W = rect.width, H = rect.height;
+  const padL = 54, padR = 54, padT = 14, padB = 22;
+  const pw = W - padL - padR, ph = H - padT - padB;
+  ctx.clearRect(0, 0, W, H);
+
+  let vMin = parseFloat($('vMin').value);
+  let vMax = parseFloat($('vMax').value);
+  if (!Number.isFinite(vMin)) vMin = 2.5;
+  if (!Number.isFinite(vMax) || vMax <= vMin) vMax = vMin + 0.1;
+
+  const iMax = Math.max(0.5, ...data.map(d => d.I || 0)) * 1.15;
+
+  ctx.strokeStyle = '#262c36';
+  ctx.lineWidth = 1;
+  ctx.font = 'bold 11px monospace';
+
+  for (let g = 0; g <= 5; g++) {
+    const y = padT + (ph * g) / 5;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + pw, y); ctx.stroke();
+
+    const valV = vMax - ((vMax - vMin) * g) / 5;
+    const valI = iMax - (iMax * g) / 5;
+
+    ctx.fillStyle = '#3fb950';
+    ctx.textAlign = 'right';
+    ctx.fillText(valV.toFixed(2) + 'V', padL - 6, y + 4);
+
+    ctx.fillStyle = '#ff9f1c';
+    ctx.textAlign = 'left';
+    ctx.fillText(valI.toFixed(2) + 'A', padL + pw + 6, y + 4);
+  }
+
+  const seriesPts = {};
+  if (data.length > 1) {
+    for (const s of SERIES) {
+      if (!s.show) continue;
+      const pts = [];
+      for (let i = 0; i < data.length; i++) {
+        const val = data[i][s.key];
+        if (val === undefined) continue;
+        const x = padL + (pw * i) / (data.length - 1);
+        let norm = 0;
+        if (s.axis === 'V') norm = (val - vMin) / (vMax - vMin);
+        else if (s.axis === 'I') norm = val / iMax;
+        else norm = val / 100.0;
+        const y = padT + ph - Math.max(0, Math.min(1, norm)) * ph;
+        pts.push({ x, y, idx: i, val });
+      }
+      seriesPts[s.key] = pts;
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      drawSmoothCurve(pts);
+      ctx.stroke();
+    }
+  }
+
+  if (hoverIdx >= 0 && hoverIdx < data.length && data.length > 1) {
+    const hx = padL + (pw * hoverIdx) / (data.length - 1);
+    ctx.strokeStyle = 'rgba(230, 237, 243, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);          // включить пунктир
+    ctx.beginPath(); ctx.moveTo(hx, padT); ctx.lineTo(hx, padT + ph); ctx.stroke();
+    ctx.setLineDash([]);              // сбросить (пустой массив — корректно)
+
+    for (const s of SERIES) {
+      if (!s.show || !seriesPts[s.key]) continue;
+      const p = seriesPts[s.key].find(pt => pt.idx === hoverIdx);
+      if (!p) continue;
+      ctx.fillStyle = s.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#0d1117'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  }
+
+  const tbody = $('statsBody');
+  tbody.innerHTML = '';
+  for (const s of SERIES) {
+    const vals = data.map(d => d[s.key]).filter(v => v !== undefined);
+    const min = vals.length ? Math.min(...vals).toFixed(2) : '—';
+    const max = vals.length ? Math.max(...vals).toFixed(2) : '—';
+    const avg = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : '—';
+    const cur = vals.length ? vals[vals.length - 1].toFixed(2) : '—';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><label style="cursor:pointer"><input type="checkbox" ${s.show ? 'checked' : ''} data-k="${s.key}"> <span class="dot" style="background:${s.color}"></span>${s.label}</label></td>
+      <td>${s.axis === 'V' ? vMin.toFixed(1) + '–' + vMax.toFixed(1) + ' В' : (s.axis === 'I' ? '0–' + iMax.toFixed(1) + ' А' : '0–100%')}</td>
+      <td>${min}</td>
+      <td>${avg}</td>
+      <td>${max}</td>
+      <td style="color:${s.color}"><b>${cur}</b></td>`;
+    tr.querySelector('input').onchange = e => { s.show = e.target.checked; renderAll(); };
+    tbody.appendChild(tr);
+  }
+}
+
+canvas.onmousemove = e => {
+  if (data.length < 2) return;
+  const rect = canvas.getBoundingClientRect();
+  const padL = 54, padR = 54;
+  const pw = rect.width - padL - padR;
+  const mx = e.clientX - rect.left;
+  if (mx < padL || mx > padL + pw) {
+    hoverIdx = -1; $('tooltip').style.display = 'none'; renderAll(); return;
+  }
+  hoverIdx = Math.round(((mx - padL) / pw) * (data.length - 1));
+  const d = data[hoverIdx];
+  const tt = $('tooltip');
+  let html = `<div class="tt-head">Точка #${hoverIdx + 1} • ${fmtTime(d._sec || hoverIdx)}</div>`;
+  for (const s of SERIES) {
+    if (s.show && d[s.key] !== undefined) {
+      html += `<div class="tt-row"><span style="color:${s.color}">${s.label.split(' ')}:</span><b>${d[s.key].toFixed(2)}</b></div>`;
+    }
+  }
+  if (d.Q !== undefined) {
+    html += `<div class="tt-row"><span style="color:#8b949e">Ёмкость:</span><b>${d.Q.toFixed(3)} А·ч</b></div>`;
+  }
+  tt.innerHTML = html;
+  tt.style.display = 'block';
+  const leftPos = (mx + 175 > rect.width) ? (mx - 165) : (mx + 14);
+  tt.style.left = leftPos + 'px';
+  tt.style.top = Math.max(12, e.clientY - rect.top - 20) + 'px';
+  renderAll();
+};
+
+canvas.onmouseleave = () => {
+  hoverIdx = -1;
+  $('tooltip').style.display = 'none';
+  renderAll();
+};
+
+$('btnConn').onclick = async () => {
+  if (port) {
+    try { await reader.cancel(); await port.close(); } catch (e) {}
+    port = null; $('btnConn').textContent = 'Подключиться'; $('btnConn').className = 'primary';
+    return;
+  }
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: parseInt($('baud').value, 10) });
+    $('btnConn').textContent = 'Отключиться'; $('btnConn').className = 'active';
+    const dec = new TextDecoderStream();
+    port.readable.pipeTo(dec.writable);
+    reader = dec.readable.getReader();
+    let buf = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      const lines = buf.split(/\r?\n/);
+      buf = lines.pop();
+      for (const l of lines) parseLine(l);
+    }
+  } catch (e) { alert('Ошибка порта: ' + e.message); }
+};
+
+$('btnPause').onclick = () => setPaused(!paused);
+$('btnClear').onclick = () => clearAllData(false);
+$('btnTogglePaste').onclick = () => {
+  const w = $('pasteWrap');
+  w.style.display = (w.style.display === 'none') ? 'flex' : 'none';
+};
+$('btnParseText').onclick = () => {
+  clearAllData(false);
+  setPaused(false);
+  for (const l of $('pasteArea').value.split(/\r?\n/)) parseLine(l);
+};
+$('btnDemo').onclick = () => {
+  $('pasteArea').value = [
+    'V:3.50 I:0.50 P:22.0 Q:0.000 C1:3.50 C2:0.00 C3:0.00 SYS:RUN_CHG_1S',
+    'V:3.72 I:0.50 P:24.0 Q:0.120 C1:3.72 C2:0.00 C3:0.00 SYS:RUN_CHG_1S',
+    'V:3.98 I:0.50 P:26.5 Q:0.350 C1:3.98 C2:0.00 C3:0.00 SYS:RUN_CHG_1S',
+    'V:4.16 I:0.28 P:21.0 Q:0.560 C1:4.16 C2:0.00 C3:0.00 SYS:RUN_CHG_1S',
+    'V:4.20 I:0.05 P:14.0 Q:0.680 C1:4.20 C2:0.00 C3:0.00 SYS:DONE_CHG IR:142'
+  ].join('\n');
+};
+$('btnCsv').onclick = () => {
+  const csv = ['V;I;P;Q;C1;C2;C3', ...data.map(d => [d.V, d.I, d.P, d.Q, d.C1, d.C2, d.C3].map(x => x ?? '').join(';'))].join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'imax_b6_log.csv'; a.click();
+};
+$('btnTxt').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([rawLines.join('\n')], { type: 'text/plain' }));
+  a.download = 'imax_b6_raw.txt'; a.click();
+};
+
+window.onresize = renderAll;
+renderAll();
+</script>
+</body>
+</html>
