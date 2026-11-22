@@ -1,6 +1,5 @@
 # --- Временные файлы компиляции (Arduino IDE / STM32duino) ---
-# Игнорируем отладочные файлы внутри IMAX_B6_PRO/build, оставляя .bin и .hex
-IMAX_B6_PRO/build/**/*.elf
+# Игнорируем отладочные файлы внутри IMAX_B6_PRO/build, оставляя .bin и .hex .elf
 IMAX_B6_PRO/build/**/*.map
 IMAX_B6_PRO/build/**/*.lst
 IMAX_B6_PRO/build/**/*.sym
