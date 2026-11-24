@@ -63,9 +63,34 @@
   th { background: #12161c; color: var(--muted); font-weight: 600; font-size: 12px; }
   tr:last-child td { border-bottom: none; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; }
+
   .log-box { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
-  .log-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; color: var(--muted); }
-  pre { margin: 0; height: 105px; overflow-y: auto; background: #0d1117; padding: 8px; border-radius: 6px; border: 1px solid var(--border); font-family: monospace; font-size: 11px; color: #8b949e; }
+  .log-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--muted); }
+  .log-actions { display: flex; gap: 6px; align-items: center; }
+  .log-expanded {
+    margin: 0; height: 135px; overflow-y: auto; background: #0d1117;
+    padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; line-height: 1.45; color: #8b949e;
+  }
+  .log-expanded .log-line { padding: 1px 4px; border-radius: 4px; white-space: pre-wrap; word-break: break-all; }
+  .log-expanded .log-line.latest {
+    background: rgba(47, 129, 247, 0.14);
+    color: #e6edf3;
+    border-left: 3px solid var(--accent);
+    padding-left: 7px;
+  }
+  .log-collapsed-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: rgba(47, 129, 247, 0.12);
+    border: 1px solid rgba(47, 129, 247, 0.45);
+    border-left: 4px solid var(--accent);
+    border-radius: 6px; padding: 7px 10px;
+  }
+  .log-latest-text {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 13.5px; font-weight: 500; color: #e6edf3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   textarea { width: 100%; height: 80px; font-family: monospace; }
 </style>
 </head>
@@ -104,7 +129,7 @@
     <span>Макс:</span>
     <div class="spin-box">
       <button type="button" id="vMaxDec">−</button>
-      <input id="vMax" type="number" step="0.1" value="4.3">
+      <input id="vMax" type="number" step="0.1" value="4.4">
       <button type="button" id="vMaxInc">+</button>
     </div>
     <button type="button" id="btnAutoFit" title="Подогнать шкалу под текущие данные">Авто-масштаб</button>
@@ -119,6 +144,7 @@
       <button id="btnDemo">Пример 1S + IR</button>
     </div>
   </div>
+
   <div class="chart-wrap">
     <canvas id="chart"></canvas>
     <div id="tooltip" class="tooltip"></div>
@@ -141,27 +167,39 @@
   <div class="log-box">
     <div class="log-head">
       <span>Поток COM-порта — строк: <b id="lineCount">0</b> <span id="logPauseTag" style="color:var(--i-col);font-weight:600;display:none">(НА ПАУЗЕ)</span></span>
-      <button id="btnTxt">Скачать TXT</button>
+      <div class="log-actions">
+        <button type="button" id="btnToggleLog">Свернуть</button>
+        <button type="button" id="btnTxt">Скачать TXT</button>
+      </div>
     </div>
-    <pre id="rawLog">Ожидание данных из порта...</pre>
+
+    <div id="logCollapsed" class="log-collapsed-row" style="display:none">
+      <span id="latestLogText" class="log-latest-text">Ожидание данных из порта...</span>
+      <button type="button" id="btnCopyLatest">Копировать</button>
+    </div>
+
+    <div id="rawLog" class="log-expanded">
+      <div class="log-line">Ожидание данных из порта...</div>
+    </div>
   </div>
 
 </div>
-
 <script>
-const SERIES = [
-  { key: 'V',  label: 'Напряжение (В)', color: '#3fb950', axis: 'V', show: true },
-  { key: 'I',  label: 'Ток (А)',        color: '#ff9f1c', axis: 'I', show: true },
-  { key: 'P',  label: 'ШИМ (%)',        color: '#a371f7', axis: 'P', show: false },
-  { key: 'C1', label: 'Банка C1 (В)',   color: '#58a6ff', axis: 'V', show: false },
-  { key: 'C2', label: 'Банка C2 (В)',   color: '#f778ba', axis: 'V', show: false },
-  { key: 'C3', label: 'Банка C3 (В)',   color: '#79c0ff', axis: 'V', show: false }
-];
+const SERIES = new Array(
+  { key: 'V',   label: 'Напряжение (В)', color: '#3fb950', axis: 'V', show: true },
+  { key: 'I',   label: 'Ток (А)',        color: '#ff9f1c', axis: 'I', show: true },
+  { key: 'P',   label: 'ШИМ (%)',        color: '#a371f7', axis: 'P', show: false },
+  { key: 'C1',  label: 'Банка C1 (В)',   color: '#58a6ff', axis: 'V', show: false },
+  { key: 'C2',  label: 'Банка C2 (В)',   color: '#f778ba', axis: 'V', show: false },
+  { key: 'C3',  label: 'Банка C3 (В)',   color: '#79c0ff', axis: 'V', show: false },
+  { key: 'Vin', label: 'Вход БП (В)',    color: '#8b949e', axis: 'V', show: false }
+);
 
-let data = [], rawLines = [];
+let data = new Array(), rawLines = new Array();
 let paused = false, port = null, reader = null;
 let elapsedSec = 0, timerId = null, lastSysFlag = 'IDLE';
 let hoverIdx = -1;
+let logCollapsed = false;
 
 const $ = id => document.getElementById(id);
 const canvas = $('chart'), ctx = canvas.getContext('2d');
@@ -172,9 +210,6 @@ const canvas = $('chart'), ctx = canvas.getContext('2d');
   c.width = size; c.height = size;
   const g = c.getContext('2d');
 
-  // Фон НЕ рисуем — canvas прозрачный по умолчанию
-
-  // Корпус батареи — тонкий контур
   const bodyX = 14, bodyY = 12, bodyW = 36, bodyH = 42, r = 6;
   g.strokeStyle = '#e6edf3';
   g.lineWidth = 3;
@@ -183,13 +218,11 @@ const canvas = $('chart'), ctx = canvas.getContext('2d');
   g.roundRect(bodyX, bodyY, bodyW, bodyH, r);
   g.stroke();
 
-  // Контакт сверху
   g.fillStyle = '#e6edf3';
   g.beginPath();
   g.roundRect(26, 6, 12, 5, 2);
   g.fill();
 
-  // Заряд — градиент зелёный → бирюзовый
   const charge = g.createLinearGradient(0, bodyY + bodyH, 0, bodyY + bodyH * 0.35);
   charge.addColorStop(0, '#2ea043');
   charge.addColorStop(1, '#3fb950');
@@ -198,7 +231,6 @@ const canvas = $('chart'), ctx = canvas.getContext('2d');
   g.roundRect(bodyX + 5, bodyY + bodyH * 0.35, bodyW - 10, bodyH * 0.6, 3);
   g.fill();
 
-  // Молния — «вырез», цвет прозрачный через globalCompositeOperation
   g.globalCompositeOperation = 'destination-out';
   g.beginPath();
   g.moveTo(35, 24);
@@ -218,10 +250,9 @@ const canvas = $('chart'), ctx = canvas.getContext('2d');
   document.head.appendChild(link);
 })();
 
-
 function setVoltageRange(minVal, maxVal) {
   let lo = Number.isFinite(minVal) ? Math.max(0, minVal) : 2.5;
-  let hi = Number.isFinite(maxVal) ? Math.max(lo + 0.1, maxVal) : 4.3;
+  let hi = Number.isFinite(maxVal) ? Math.max(lo + 0.1, maxVal) : 4.4;
   $('vMin').value = lo.toFixed(1);
   $('vMax').value = hi.toFixed(1);
   renderAll();
@@ -231,7 +262,7 @@ function stepRange(which, delta) {
   let lo = parseFloat($('vMin').value);
   let hi = parseFloat($('vMax').value);
   if (!Number.isFinite(lo)) lo = 2.5;
-  if (!Number.isFinite(hi)) hi = 4.3;
+  if (!Number.isFinite(hi)) hi = 4.4;
 
   if (which === 'min') lo = Math.max(0, Math.min(hi - 0.1, lo + delta));
   else hi = Math.max(lo + 0.1, hi + delta);
@@ -247,10 +278,11 @@ $('vMax').onchange = () => stepRange('max', 0);
 $('smoothLine').onchange = renderAll;
 
 $('btnAutoFit').onclick = () => {
-  const vVals = [];
+  const vVals = new Array();
   for (const d of data) {
     for (const s of SERIES) {
-      if (s.show && s.axis === 'V' && Number.isFinite(d[s.key])) vVals.push(d[s.key]);
+      const val = Reflect.get(d, s.key);
+      if (s.show && s.axis === 'V' && Number.isFinite(val)) vVals.push(val);
     }
   }
   if (!vVals.length) return;
@@ -283,27 +315,81 @@ function setPaused(state) {
   $('logPauseTag').style.display = paused ? 'inline' : 'none';
 }
 
+function renderLogBox() {
+  $('lineCount').textContent = rawLines.length;
+  const logEl = $('rawLog');
+  const latestEl = $('latestLogText');
+
+  if (!rawLines.length) {
+    latestEl.textContent = 'Ожидание данных из порта...';
+    logEl.innerHTML = '<div class="log-line">Ожидание данных из порта...</div>';
+    return;
+  }
+
+  const latestStr = rawLines.at(-1);
+  latestEl.textContent = latestStr;
+  latestEl.title = latestStr;
+
+  if (!logCollapsed) {
+    const slice = rawLines.slice(-60);
+    logEl.innerHTML = '';
+    slice.forEach((line, idx) => {
+      const div = document.createElement('div');
+      div.className = 'log-line' + (idx === slice.length - 1 ? ' latest' : '');
+      div.textContent = line;
+      logEl.appendChild(div);
+    });
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+}
+
+$('btnToggleLog').onclick = () => {
+  logCollapsed = !logCollapsed;
+  $('btnToggleLog').textContent = logCollapsed ? 'Развернуть' : 'Свернуть';
+  $('logCollapsed').style.display = logCollapsed ? 'flex' : 'none';
+  $('rawLog').style.display = logCollapsed ? 'none' : 'block';
+  renderLogBox();
+};
+
+$('btnCopyLatest').onclick = async () => {
+  if (!rawLines.length) return;
+  const textToCopy = rawLines.at(-1);
+  const btn = $('btnCopyLatest');
+  try {
+    await navigator.clipboard.writeText(textToCopy);
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = textToCopy;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+  btn.textContent = 'Скопировано ✓';
+  btn.classList.add('active');
+  setTimeout(() => {
+    btn.textContent = 'Копировать';
+    btn.classList.remove('active');
+  }, 1500);
+};
 function clearAllData(keepSys = false) {
-  data = [];
+  data = new Array();
   hoverIdx = -1;
   $('tooltip').style.display = 'none';
   if (!keepSys) {
-    rawLines = [];
-    $('rawLog').textContent = '';
-    $('lineCount').textContent = '0';
+    rawLines = new Array();
+    renderLogBox();
   }
   $('kpiCap').textContent = '0.000';
   $('irPill').style.display = 'none';
   startTimer(true);
   renderAll();
 }
+
 function appendRawLog(trimmed) {
   rawLines.push(trimmed);
   if (rawLines.length > 5000) rawLines.shift();
-  $('lineCount').textContent = rawLines.length;
-  const logEl = $('rawLog');
-  logEl.textContent = rawLines.slice(-60).join('\n');
-  logEl.scrollTop = logEl.scrollHeight;
+  renderLogBox();
 }
 
 function handleSysFlag(flag, extraMap, rawLine) {
@@ -318,9 +404,9 @@ function handleSysFlag(flag, extraMap, rawLine) {
   if (extraMap.IR !== undefined) {
     $('irPill').style.display = 'inline-block';
     $('kpiIr').textContent = extraMap.IR;
-    const cellsIr = ['B1','B2','B3','B4','B5','B6']
-      .filter(k => extraMap[k] !== undefined)
-      .map(k => `${k}: ${extraMap[k]} мОм`).join(', ');
+    const cellsIr = new Array('B1', 'B2', 'B3', 'B4', 'B5', 'B6')
+      .filter(k => Reflect.get(extraMap, k) !== undefined)
+      .map(k => `${k}: ${Reflect.get(extraMap, k)} мОм`).join(', ');
     $('irPill').title = cellsIr || 'Суммарное внутреннее сопротивление';
   }
 
@@ -337,8 +423,8 @@ function handleSysFlag(flag, extraMap, rawLine) {
       setVoltageRange(0.0, 24.0);
     } else {
       const m = flag.match(/_(\d)S$/);
-      const cells = (m && m) ? parseInt(m, 10) : 1;
-      setVoltageRange(2.5 * cells, 4.3 * cells);
+      const cells = (m && m.at(1)) ? parseInt(m.at(1), 10) : 1;
+      setVoltageRange(2.3 * cells, 4.4 * cells);
     }
   } else if (flag === 'STOP' || flag.startsWith('DONE_') || flag === 'ERR') {
     if (!paused && rawLine) appendRawLog(rawLine);
@@ -361,7 +447,7 @@ function parseLine(line) {
     if (k === 'SYS') sysFlag = v;
     else {
       const num = parseFloat(v);
-      if (!isNaN(num)) map[k] = num;
+      if (!isNaN(num)) Reflect.set(map, k, num);
     }
   }
 
@@ -388,16 +474,20 @@ function parseLine(line) {
 
 function drawSmoothCurve(pts) {
   if (pts.length < 2) return;
-  ctx.moveTo(pts.x, pts.y);
+  const first = pts.at(0);
+  ctx.moveTo(first.x, first.y);
   if (!$('smoothLine').checked || pts.length === 2) {
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    for (let i = 1; i < pts.length; i++) {
+      const pt = pts.at(i);
+      ctx.lineTo(pt.x, pt.y);
+    }
     return;
   }
   for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i === 0 ? i : i - 1];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[i + 2 < pts.length ? i + 2 : i + 1];
+    const p0 = pts.at(i === 0 ? i : i - 1);
+    const p1 = pts.at(i);
+    const p2 = pts.at(i + 1);
+    const p3 = pts.at(i + 2 < pts.length ? i + 2 : i + 1);
     const cp1x = p1.x + (p2.x - p0.x) / 6;
     const cp1y = p1.y + (p2.y - p0.y) / 6;
     const cp2x = p2.x - (p3.x - p1.x) / 6;
@@ -448,9 +538,9 @@ function renderAll() {
   if (data.length > 1) {
     for (const s of SERIES) {
       if (!s.show) continue;
-      const pts = [];
+      const pts = new Array();
       for (let i = 0; i < data.length; i++) {
-        const val = data[i][s.key];
+        const val = Reflect.get(data.at(i), s.key);
         if (val === undefined) continue;
         const x = padL + (pw * i) / (data.length - 1);
         let norm = 0;
@@ -460,7 +550,7 @@ function renderAll() {
         const y = padT + ph - Math.max(0, Math.min(1, norm)) * ph;
         pts.push({ x, y, idx: i, val });
       }
-      seriesPts[s.key] = pts;
+      Reflect.set(seriesPts, s.key, pts);
       ctx.strokeStyle = s.color;
       ctx.lineWidth = 2.2;
       ctx.beginPath();
@@ -473,13 +563,14 @@ function renderAll() {
     const hx = padL + (pw * hoverIdx) / (data.length - 1);
     ctx.strokeStyle = 'rgba(230, 237, 243, 0.35)';
     ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);          // включить пунктир
+    ctx.setLineDash(new Array(4, 4));
     ctx.beginPath(); ctx.moveTo(hx, padT); ctx.lineTo(hx, padT + ph); ctx.stroke();
-    ctx.setLineDash([]);              // сбросить (пустой массив — корректно)
+    ctx.setLineDash(new Array());
 
     for (const s of SERIES) {
-      if (!s.show || !seriesPts[s.key]) continue;
-      const p = seriesPts[s.key].find(pt => pt.idx === hoverIdx);
+      const sArr = Reflect.get(seriesPts, s.key);
+      if (!s.show || !sArr) continue;
+      const p = sArr.find(pt => pt.idx === hoverIdx);
       if (!p) continue;
       ctx.fillStyle = s.color;
       ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
@@ -490,11 +581,11 @@ function renderAll() {
   const tbody = $('statsBody');
   tbody.innerHTML = '';
   for (const s of SERIES) {
-    const vals = data.map(d => d[s.key]).filter(v => v !== undefined);
+    const vals = data.map(d => Reflect.get(d, s.key)).filter(v => v !== undefined);
     const min = vals.length ? Math.min(...vals).toFixed(2) : '—';
     const max = vals.length ? Math.max(...vals).toFixed(2) : '—';
     const avg = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : '—';
-    const cur = vals.length ? vals[vals.length - 1].toFixed(2) : '—';
+    const cur = vals.length ? vals.at(-1).toFixed(2) : '—';
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><label style="cursor:pointer"><input type="checkbox" ${s.show ? 'checked' : ''} data-k="${s.key}"> <span class="dot" style="background:${s.color}"></span>${s.label}</label></td>
@@ -518,12 +609,14 @@ canvas.onmousemove = e => {
     hoverIdx = -1; $('tooltip').style.display = 'none'; renderAll(); return;
   }
   hoverIdx = Math.round(((mx - padL) / pw) * (data.length - 1));
-  const d = data[hoverIdx];
+  const d = data.at(hoverIdx);
   const tt = $('tooltip');
   let html = `<div class="tt-head">Точка #${hoverIdx + 1} • ${fmtTime(d._sec || hoverIdx)}</div>`;
   for (const s of SERIES) {
-    if (s.show && d[s.key] !== undefined) {
-      html += `<div class="tt-row"><span style="color:${s.color}">${s.label.split(' ')}:</span><b>${d[s.key].toFixed(2)}</b></div>`;
+    const val = Reflect.get(d, s.key);
+    if (s.show && val !== undefined) {
+      const shortName = s.label.split(' ').at(0);
+      html += `<div class="tt-row"><span style="color:${s.color}">${shortName}:</span><b>${val.toFixed(2)}</b></div>`;
     }
   }
   if (d.Q !== undefined) {
@@ -580,23 +673,25 @@ $('btnParseText').onclick = () => {
   for (const l of $('pasteArea').value.split(/\r?\n/)) parseLine(l);
 };
 $('btnDemo').onclick = () => {
-  $('pasteArea').value = [
-    'V:3.50 I:0.50 P:22.0 Q:0.000 C1:3.50 C2:0.00 C3:0.00 SYS:RUN_CHG_1S',
-    'V:3.72 I:0.50 P:24.0 Q:0.120 C1:3.72 C2:0.00 C3:0.00 SYS:RUN_CHG_1S',
-    'V:3.98 I:0.50 P:26.5 Q:0.350 C1:3.98 C2:0.00 C3:0.00 SYS:RUN_CHG_1S',
-    'V:4.16 I:0.28 P:21.0 Q:0.560 C1:4.16 C2:0.00 C3:0.00 SYS:RUN_CHG_1S',
-    'V:4.20 I:0.05 P:14.0 Q:0.680 C1:4.20 C2:0.00 C3:0.00 SYS:DONE_CHG IR:142'
-  ].join('\n');
+  $('pasteArea').value = new Array(
+    'V:3.50 I:0.50 P:22.0 Q:0.000 C1:3.50 C2:0.00 C3:0.00 Vin:12.12 SYS:RUN_CHG_1S',
+    'V:3.72 I:0.50 P:24.0 Q:0.120 C1:3.72 C2:0.00 C3:0.00 Vin:12.11 SYS:RUN_CHG_1S',
+    'V:3.98 I:0.50 P:26.5 Q:0.350 C1:3.98 C2:0.00 C3:0.00 Vin:12.10 SYS:RUN_CHG_1S',
+    'V:4.16 I:0.28 P:21.0 Q:0.560 C1:4.16 C2:0.00 C3:0.00 Vin:12.14 SYS:RUN_CHG_1S',
+    'V:4.20 I:0.05 P:14.0 Q:0.680 C1:4.20 C2:0.00 C3:0.00 Vin:12.15 SYS:DONE_CHG IR:142'
+  ).join('\n');
 };
 $('btnCsv').onclick = () => {
-  const csv = ['V;I;P;Q;C1;C2;C3', ...data.map(d => [d.V, d.I, d.P, d.Q, d.C1, d.C2, d.C3].map(x => x ?? '').join(';'))].join('\n');
+  const header = 'V;I;P;Q;C1;C2;C3;Vin';
+  const rows = data.map(d => new Array(d.V, d.I, d.P, d.Q, d.C1, d.C2, d.C3, d.Vin).map(x => x ?? '').join(';'));
+  const csv = new Array(header, ...rows).join('\n');
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.href = URL.createObjectURL(new Blob(new Array(csv), { type: 'text/csv' }));
   a.download = 'imax_b6_log.csv'; a.click();
 };
 $('btnTxt').onclick = () => {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([rawLines.join('\n')], { type: 'text/plain' }));
+  a.href = URL.createObjectURL(new Blob(new Array(rawLines.join('\n')), { type: 'text/plain' }));
   a.download = 'imax_b6_raw.txt'; a.click();
 };
 
