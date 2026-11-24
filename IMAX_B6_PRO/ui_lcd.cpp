@@ -76,6 +76,20 @@ static const char* getMainLabel(uint8_t idx) {
   return "   SETTINGS   ";
 }
 
+static const char* getChemMenuName(ChemType c) {
+  if (c == CHEM_LION) return "Li-Ion";
+  if (c == CHEM_LIPO) return "Li-Po ";
+  if (c == CHEM_LIFE) return "Li-Fe ";
+  return "Li-HV ";
+}
+
+static const char* getChemShortTag(ChemType c) {
+  if (c == CHEM_LION) return "LIon";
+  if (c == CHEM_LIPO) return "LiPo";
+  if (c == CHEM_LIFE) return "LiFe";
+  return "LiHV";
+}
+
 static const char* getModeLongName(WorkMode m) {
   if (m == MODE_CHARGE)  return "CHARGE   ";
   if (m == MODE_STORAGE) return "STORAGE  ";
@@ -90,10 +104,22 @@ static const char* getModeShortTag(WorkMode m) {
   return "BAL";
 }
 
+static void printFixedAmpsRight(float amps) {
+  int16_t aHundredths = (int16_t)(amps * 100.0f + 0.5f);
+  if (aHundredths < 0) aHundredths = 0;
+  if (aHundredths > 9999) aHundredths = 9999;
+
+  lcd.setCursor(10, 0);
+  if (aHundredths < 1000) lcd.print(' ');
+  lcd.print(aHundredths / 100);
+  lcd.print('.');
+  print2D(aHundredths % 100);
+  lcd.print('A');
+}
+
 void updateUI() {
   uint32_t now = millis();
 
-  // Медленное комфортное мигание во всех меню и в рабочем режиме PSU
   uint32_t onMs  = 1150UL;
   uint32_t offMs = 350UL;
   if (sysState == STATE_RUNNING && selMode == MODE_PSU) {
@@ -120,6 +146,16 @@ void updateUI() {
     lastDrawnPg  = runPage;
   }
 
+  if (sysState == STATE_CONFIRM_NOBAL) {
+    lcd.setCursor(0, 0);
+    lcd.print("!!! WARNING !!! ");
+    lcd.setCursor(0, 1);
+    lcd.print("NO BAL ");
+    lcd.print(selCells);
+    lcd.print("S START?");
+    return;
+  }
+
   if (sysState == STATE_IDLE) {
     if (uiScreen == 0) { // SCR_MAIN
       uint8_t topIdx = (mainIdx == 2) ? 1 : 0;
@@ -129,7 +165,7 @@ void updateUI() {
     else if (uiScreen == 1) { // SCR_CELLS
       lcd.setCursor(0, 0);
       if (fieldIdx == 0 && !blinkPhase) lcd.print("      ");
-      else lcd.print((selChem == CHEM_LION) ? "Li-Ion" : "Li-Fe ");
+      else lcd.print(getChemMenuName(selChem));
       lcd.print("        ");
       if (fieldIdx == 1 && !blinkPhase) lcd.print("  ");
       else { lcd.print(selCells); lcd.print('S'); }
@@ -149,7 +185,6 @@ void updateUI() {
       lcd.setCursor(0, 0);
       lcd.print("LAB POWER SUPPLY");
 
-      // Округляем до десятых, чтобы 10.0V (9.999999f) не вызывало лишний пробел и сдвиг тока!
       int16_t vTenths = (int16_t)(setVolts * 10.0f + 0.5f);
 
       lcd.setCursor(0, 1);
@@ -182,11 +217,9 @@ void updateUI() {
     }
     return;
   }
-
   if (sysState == STATE_RUNNING) {
     unsigned long sec = (now - jobStartMs) / 1000UL;
     if (selMode == MODE_PSU) {
-      // В течение 1.5 сек после нажатия кнопок в RUN PSU показываем целевую уставку (setVolts / setAmps)
       bool showTarget = (lastPsuEditMs != 0) && (now - lastPsuEditMs < 1500UL);
       float dispV = (showTarget && psuRunField == 0) ? setVolts : measVout;
       float dispA = (showTarget && psuRunField == 1) ? setAmps  : measAmps;
@@ -194,7 +227,6 @@ void updateUI() {
       int16_t vHundredths = (int16_t)(dispV * 100.0f + 0.5f);
       if (vHundredths < 0) vHundredths = 0;
 
-      // Строка 1 (16 симв.): "PSU 12.30V 6.56A"
       lcd.setCursor(0, 0);
       lcd.print("PSU ");
       if (psuRunField == 0 && !blinkPhase) {
@@ -214,7 +246,6 @@ void updateUI() {
         lcd.print('A');
       }
 
-      // Строка 2 (16 симв.): Ватты слева ("12.4W   "), время hh:mm:ss справа ("00:01:23")
       lcd.setCursor(0, 1);
       float w = measVout * measAmps;
       lcd.print(w, 1);
@@ -228,16 +259,34 @@ void updateUI() {
     }
 
     if (runPage == 0) {
+         // Ротация 3 сек (Химия + Банки) / 5 сек (Режим + Вольтаж) в цикле 8 сек
+      bool showModeVolt = (((now - jobStartMs) % 8000UL) >= 3000UL);
+
+
       lcd.setCursor(0, 0);
-      lcd.print(getModeShortTag(selMode));
-      lcd.print(' ');
-      lcd.print(selCells);
-      lcd.print("S  ");
-      lcd.print((balMask != 0) ? 'B' : ' ');
-      lcd.print(' ');
-      if (measAmps < 10.0f) lcd.print(' ');
-      lcd.print(measAmps, 2);
-      lcd.print('A');
+      if (!showModeVolt) {
+        lcd.print(getChemShortTag(selChem));
+        lcd.print(' ');
+        lcd.print(selCells);
+        lcd.print("S ");
+        lcd.print((balMask != 0) ? 'B' : ' ');
+        lcd.print(' ');
+      } else {
+        float packV = getTotalPackVoltage();
+        int16_t vHundredths = (int16_t)(packV * 100.0f + 0.5f);
+        if (vHundredths < 0) vHundredths = 0;
+        if (vHundredths > 9999) vHundredths = 9999;
+
+        lcd.print(getModeShortTag(selMode));
+        lcd.print(' ');
+        if (vHundredths < 1000) lcd.print(' ');
+        lcd.print(vHundredths / 100);
+        lcd.print('.');
+        print2D(vHundredths % 100);
+        lcd.print('V');
+      }
+
+      printFixedAmpsRight(measAmps);
 
       printTimeAndCapRow(sec, capacityMah);
     } else if (runPage == 1) {
@@ -264,7 +313,8 @@ void updateUI() {
     } else {
       unsigned long sec = (jobEndMs >= jobStartMs) ? ((jobEndMs - jobStartMs) / 1000UL) : 0UL;
       lcd.setCursor(0, 0);
-      lcd.print("COMPLETE! (STOP)");
+      lcd.print(getModeShortTag(selMode));
+      lcd.print(" OK!   (STOP)"); // Ровно 16 символов: "DSC OK!   (STOP)"
       printTimeAndCapRow(sec, capacityMah);
     }
   } else {

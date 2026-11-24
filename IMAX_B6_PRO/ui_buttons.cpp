@@ -24,7 +24,7 @@ uint8_t runPage     = 0;
 
 bool          blinkPhase    = true;
 unsigned long lastBlinkMs   = 0;
-unsigned long lastPsuEditMs = 0; // Время последнего изменения уставки в RUN PSU
+unsigned long lastPsuEditMs = 0;
 
 void resetBlink() {
   blinkPhase = true;
@@ -141,6 +141,20 @@ void handleButtons() {
     actionDone = true;
   }
 
+  // Обработка экрана подтверждения работы без балансира (NO BAL!)
+  if (sysState == STATE_CONFIRM_NOBAL) {
+    if (bStart) {
+      runPage = 0;
+      startJob(true); // Подтверждено пользователем -> запускаем
+    } else if (bStop) {
+      sysState = STATE_IDLE;
+      uiScreen = (selMode == MODE_IR) ? SCR_IR_SET : SCR_CELLS;
+      resetBlink();
+      softBeep(1800, 70);
+    }
+    return;
+  }
+
   if (sysState != STATE_IDLE) {
     if (bStop) {
       actionDone = true;
@@ -181,7 +195,6 @@ void handleButtons() {
     }
     return;
   }
-
   if (uiScreen == SCR_MAIN) {
     if (bInc) { mainIdx = (mainIdx + 1) % 3; resetBlink(); softBeep(2400, 25); }
     else if (bDec) { mainIdx = (mainIdx + 2) % 3; resetBlink(); softBeep(2400, 25); }
@@ -206,16 +219,23 @@ void handleButtons() {
       int8_t dir = bInc ? 1 : -1;
       resetBlink();
       softBeep(2400, 20);
-      if (fieldIdx == 0) selChem = (selChem == CHEM_LION) ? CHEM_LIFE : CHEM_LION;
-      else if (fieldIdx == 1) selCells = ((selCells - 1 + 6 + dir) % 6) + 1;
-      else if (fieldIdx == 2) selMode = (WorkMode)((selMode + 4 + dir) % 4);
-      else if (fieldIdx == 3) {
+      if (fieldIdx == 0) {
+        selChem = (ChemType)((selChem + 4 + dir) % 4);
+      } else if (fieldIdx == 1) {
+        selCells = ((selCells - 1 + 6 + dir) % 6) + 1;
+      } else if (fieldIdx == 2) {
+        selMode = (WorkMode)((selMode + 4 + dir) % 4);
+        if ((selMode == MODE_DISCH || selMode == MODE_BALANCE) && setAmps > MAX_DISCH_AMPS) {
+          setAmps = MAX_DISCH_AMPS;
+        }
+      } else if (fieldIdx == 3) {
+        float maxMenuAmps = (selMode == MODE_DISCH || selMode == MODE_BALANCE) ? MAX_DISCH_AMPS : 5.00f;
         float stepA = (accelMult >= 5) ? 0.20f : 0.10f;
-        setAmps = constrain(setAmps + dir * stepA, 0.10f, 5.00f);
+        setAmps = constrain(setAmps + dir * stepA, 0.10f, maxMenuAmps);
       }
     } else if (bStart) {
       runPage = 0;
-      startJob();
+      startJob(false);
     }
   }
   else if (uiScreen == SCR_DIAGNOSTICS) {
@@ -253,7 +273,7 @@ void handleButtons() {
       lastPsuEditMs = 0;
       runPage = 0;
       resetBlink();
-      startJob();
+      startJob(true);
     }
   }
   else if (uiScreen == SCR_IR_SET) {
@@ -269,7 +289,7 @@ void handleButtons() {
     } else if (bStart) {
       selMode = MODE_IR;
       runPage = 0;
-      startJob();
+      startJob(false);
     }
   }
   else if (uiScreen == SCR_SETTINGS) {

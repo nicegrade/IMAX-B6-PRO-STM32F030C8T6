@@ -63,28 +63,49 @@ const uint16_t PWM_LIMIT_BUCK_1S  = 550;
 const uint16_t PWM_LIMIT_BUCK_3S  = 750;
 const uint16_t PWM_LIMIT_BUCK_6S  = 900;
 const uint16_t PWM_LIMIT_BOOST_6S = 420;
-const uint16_t PWM_LIMIT_DISCH    = 520;
+const uint16_t PWM_LIMIT_DISCH    = 840; // Позволяет замкнутому контуру выйти на полные 2.00 А на 1S
 const uint16_t PWM_DISCH_OFFSET   = 2;
 
-// Защита входного БП по напряжению V_IN и тепловой лимит разряда (5.5 Вт)
+// Защита входного БП по напряжению V_IN и тепловой лимит разряда
 const float VIN_ABS_MIN_VOLTS = 9.5f;  // Аварийное отключение при полном провале входа
 const float VIN_12V_SAG_LIMIT = 10.6f; // Порог стабилизации просадки для 12В адаптера
-const float MAX_HARD_WATTS    = 65.0f; // Абсолютный потолок мощности платы (для 19В БП)
-const float MAX_DISCH_WATTS   = 5.5f;  // Тепловой потолок линейного разряда IRFZ44N
+const float MAX_HARD_WATTS    = 55.0f; // Безопасный потолок мощности дросселя и диода (50-55 Вт)
+const float MAX_DISCH_WATTS   = 7.5f;  // Тепловой потолок линейного разряда (с учётом теплоотвода на корпус)
+const float MAX_DISCH_AMPS    = 2.0f;  // Аппаратный потолок тока разряда
+
 
 // =========================================================================
-// ПОРОГИ ХИМИИ И РЕЖИМА ЛАБОРАТОРНОГО БП (PSU)
+// ПОРОГИ ВСЕХ ЛИТИЕВЫХ ХИМИЙ ОРИГИНАЛЬНОГО IMAX B6 (НА 1 ЯЧЕЙКУ)
 // =========================================================================
-const float LION_CHG_V   = 4.20f;
-const float LION_STO_V   = 3.80f;
-const float LION_DSC_V   = 3.10f;
-const float LION_MAX_V   = 4.26f;
+// 1. Li-Ion (номинал 3.6 В): Заряд 4.10 В, Хранение 3.75 В, Разряд 3.00 В
+const float LION_CHG_V       = 4.10f;
+const float LION_STO_V       = 3.75f;
+const float LION_DSC_V       = 3.00f;
+const float LION_MAX_V       = 4.18f;
+const float LION_START_MIN_V = 2.75f;
 
-const float LIFE_CHG_V   = 3.65f;
-const float LIFE_STO_V   = 3.30f;
-const float LIFE_DSC_V   = 2.60f;
-const float LIFE_MAX_V   = 3.72f;
+// 2. Li-Po (номинал 3.7 В): Заряд 4.20 В, Хранение 3.85 В, Разряд 3.10 В
+const float LIPO_CHG_V       = 4.20f;
+const float LIPO_STO_V       = 3.85f;
+const float LIPO_DSC_V       = 3.10f;
+const float LIPO_MAX_V       = 4.26f;
+const float LIPO_START_MIN_V = 2.75f;
 
+// 3. Li-Fe / LiFePO4 (номинал 3.3 В): Заряд 3.65 В, Хранение 3.30 В, Разряд 2.60 В
+const float LIFE_CHG_V       = 3.65f;
+const float LIFE_STO_V       = 3.30f;
+const float LIFE_DSC_V       = 2.60f;
+const float LIFE_MAX_V       = 3.72f;
+const float LIFE_START_MIN_V = 2.30f;
+
+// 4. Li-HV (номинал 3.8 В): Заряд 4.35 В, Хранение 3.90 В, Разряд 3.20 В
+const float LIHV_CHG_V       = 4.35f;
+const float LIHV_STO_V       = 3.90f;
+const float LIHV_DSC_V       = 3.20f;
+const float LIHV_MAX_V       = 4.42f;
+const float LIHV_START_MIN_V = 2.80f;
+
+// Параметры лабораторного БП (PSU)
 const float PSU_MIN_VOLTS       = 1.0f;
 const float PSU_MAX_VOLTS       = 24.0f;
 const float PSU_BOOST_THRESH_V  = 10.5f;

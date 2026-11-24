@@ -6,7 +6,7 @@
 #include "ir_tester.h"
 #include "ui_telemetry.h"
 
-ChemType selChem  = CHEM_LION;
+ChemType selChem  = CHEM_LIPO;
 WorkMode selMode  = MODE_CHARGE;
 uint8_t  selCells = 1;
 float    setAmps  = 0.50f;
@@ -29,10 +29,40 @@ static unsigned long lastCapMs   = 0;
 static unsigned long lastCtrlMs  = 0;
 static uint8_t       cvDoneTicks = 0;
 
-static float getTargetChargeV() { return (selChem == CHEM_LION) ? LION_CHG_V : LIFE_CHG_V; }
-static float getTargetStoreV()  { return (selChem == CHEM_LION) ? LION_STO_V : LIFE_STO_V; }
-static float getTargetDischV()  { return (selChem == CHEM_LION) ? LION_DSC_V : LIFE_DSC_V; }
-static float getMaxSafeCellV()  { return (selChem == CHEM_LION) ? LION_MAX_V : LIFE_MAX_V; }
+static float getTargetChargeV() {
+  if (selChem == CHEM_LION) return LION_CHG_V;
+  if (selChem == CHEM_LIPO) return LIPO_CHG_V;
+  if (selChem == CHEM_LIFE) return LIFE_CHG_V;
+  return LIHV_CHG_V;
+}
+
+static float getTargetStoreV() {
+  if (selChem == CHEM_LION) return LION_STO_V;
+  if (selChem == CHEM_LIPO) return LIPO_STO_V;
+  if (selChem == CHEM_LIFE) return LIFE_STO_V;
+  return LIHV_STO_V;
+}
+
+static float getTargetDischV() {
+  if (selChem == CHEM_LION) return LION_DSC_V;
+  if (selChem == CHEM_LIPO) return LIPO_DSC_V;
+  if (selChem == CHEM_LIFE) return LIFE_DSC_V;
+  return LIHV_DSC_V;
+}
+
+static float getMaxSafeCellV() {
+  if (selChem == CHEM_LION) return LION_MAX_V;
+  if (selChem == CHEM_LIPO) return LIPO_MAX_V;
+  if (selChem == CHEM_LIFE) return LIFE_MAX_V;
+  return LIHV_MAX_V;
+}
+
+static float getStartMinCellV() {
+  if (selChem == CHEM_LION) return LION_START_MIN_V;
+  if (selChem == CHEM_LIPO) return LIPO_START_MIN_V;
+  if (selChem == CHEM_LIFE) return LIFE_START_MIN_V;
+  return LIHV_START_MIN_V;
+}
 
 static void resetPwmVars() {
   pwmBuck = pwmBoost = pwmDisch = 0;
@@ -59,7 +89,7 @@ static void triggerDone() {
   softBeep(2200, 120); delay(60); softBeep(2600, 120); delay(60); softBeep(3000, 220);
 }
 
-void startJob() {
+void startJob(bool skipNoBalConfirm) {
   resetPwmVars();
   delay(20);
 
@@ -73,7 +103,6 @@ void startJob() {
     return;
   }
 
-  // Адаптивный порог просадки: для 12В БП держим >= 10.6В, для 15-19В БП держим >= 85% от ХХ
   vinMinLimit = (measVin >= 14.5f) ? (measVin * 0.85f) : VIN_12V_SAG_LIMIT;
   if (vinMinLimit < VIN_12V_SAG_LIMIT) vinMinLimit = VIN_12V_SAG_LIMIT;
 
@@ -90,16 +119,30 @@ void startJob() {
     return;
   }
 
+  float minStartV = getStartMinCellV();
+  float maxStartV = getMaxSafeCellV();
+
   if (cellV1 >= 0.50f) {
     for (uint8_t i = 0; i < selCells; i++) {
       float vc = getCellVoltage(i);
-      if (vc < 2.20f || vc > 4.35f) { abortJobWithError("CHECK BAL CABLE"); return; }
+      if (vc < minStartV) { abortJobWithError("CELL VOLT LOW!"); return; }
+      if (vc > maxStartV) { abortJobWithError("CELL VOLT HIGH!"); return; }
     }
-    if (measVout < (selCells * 2.0f)) { abortJobWithError("NO MAIN BATT"); return; }
+    if (measVout < (selCells * (minStartV - 0.15f))) { abortJobWithError("NO MAIN BATT"); return; }
   } else {
     if (selMode == MODE_BALANCE) { abortJobWithError("NEED BAL CABLE"); return; }
-    if (measVout >= (selCells * 2.20f) && measVout <= (selCells * 4.35f)) {
+    if (measVout >= (selCells * minStartV) && measVout <= (selCells * maxStartV)) {
       useVoutAs1S = true;
+      if (selCells > 1 && !skipNoBalConfirm) {
+        hardwareAllOff();
+        sysState = STATE_CONFIRM_NOBAL;
+        softBeep(2000, 90); delay(50); softBeep(2000, 90);
+        return;
+      }
+    } else if (measVout > 1.20f && measVout < (selCells * minStartV)) {
+      abortJobWithError("BATT VOLT LOW!"); return;
+    } else if (measVout > (selCells * maxStartV)) {
+      abortJobWithError("BATT VOLT HIGH!"); return;
     } else {
       abortJobWithError("NO BATTERY"); return;
     }
@@ -120,7 +163,6 @@ void startJob() {
   sendTelemetryNow(nullptr);
   softBeep(2600, 120);
 }
-
 void stopJobManual() {
   resetPwmVars();
   measAmps = 0.0f;
@@ -150,11 +192,14 @@ void runControlStep() {
 
   if (selMode == MODE_PSU) { runLabPsuStep(); return; }
 
+  float minCritV = getTargetDischV() - 0.35f;
+  float maxCritV = getMaxSafeCellV();
+
   float minV = 9.99f, maxV = 0.00f;
   for (uint8_t i = 0; i < selCells; i++) {
     float v = getCellVoltage(i);
-    if (v < 1.80f) { abortJobWithError("CELL LOW / OPEN"); return; }
-    if (v > getMaxSafeCellV()) { abortJobWithError("OVERVOLTAGE!"); return; }
+    if (v < minCritV) { abortJobWithError("CELL LOW / OPEN"); return; }
+    if (v > maxCritV) { abortJobWithError("OVERVOLTAGE!"); return; }
     if (v < minV) minV = v;
     if (v > maxV) maxV = v;
   }
@@ -172,7 +217,8 @@ void runControlStep() {
     float vTarget = (selMode == MODE_STORAGE) ? getTargetStoreV() : getTargetChargeV();
 
     uint8_t newBal = 0;
-    if (selCells > 1 && !useVoutAs1S && maxV > 3.85f) {
+    float balStartV = vTarget - 0.35f;
+    if (selCells > 1 && !useVoutAs1S && maxV > balStartV) {
       for (uint8_t i = 0; i < selCells; i++) {
         if (getCellVoltage(i) - minV > 0.015f) newBal |= (1 << i);
       }
@@ -191,7 +237,6 @@ void runControlStep() {
       if (++cvDoneTicks >= 20) { cvDoneTicks = 0; triggerDone(); return; }
     } else cvDoneTicks = 0;
 
-    // Если входной БП просел до порога — плавно снижаем накачку, выравнивая баланс мощности
     if (vinSagging) {
       uint16_t drop = (measVin < vinMinLimit - 0.30f) ? 6 : 2;
       if (pwmBoost > 0) pwmBoost = (pwmBoost >= drop) ? (pwmBoost - drop) : 0;
@@ -200,7 +245,6 @@ void runControlStep() {
       if (pwmBoost > 0) pwmBoost = (pwmBoost >= 4) ? (pwmBoost - 4) : 0;
       else if (pwmBuck > 8) pwmBuck -= 2;
     } else {
-      // Набираем ток только если есть запас по входному напряжению (+0.15 В гистерезис)
       if (measAmps < effSetAmps - 0.03f && pwmBuck < maxSafeBuck && measVin > vinMinLimit + 0.15f) {
         pwmBuck += 2;
       } else if (measAmps > effSetAmps + 0.03f) {
@@ -209,7 +253,6 @@ void runControlStep() {
       }
     }
 
-    // Повышающий каскад Boost подключаем только при достаточном напряжении БП (и если вход < выхода)
     if (!vinSagging && selCells >= 4 && pwmBuck > 350 && maxV < vTarget && (packV + 1.5f > measVin)) {
       if (measAmps < effSetAmps - 0.03f && pwmBoost < PWM_LIMIT_BOOST_6S && measVin > vinMinLimit + 0.15f) {
         pwmBoost += 2;
@@ -230,6 +273,7 @@ void runControlStep() {
 
     float packV = max(2.0f, getTotalPackVoltage());
     float safeAmps = ((setAmps * packV) > MAX_DISCH_WATTS) ? (MAX_DISCH_WATTS / packV) : setAmps;
+    if (safeAmps > MAX_DISCH_AMPS) safeAmps = MAX_DISCH_AMPS;
 
     float errI = safeAmps - measAmps;
     if (pwmDisch < PWM_DISCH_OFFSET) {
